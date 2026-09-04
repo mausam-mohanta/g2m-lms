@@ -259,7 +259,13 @@ function normalizeTopic(query) {
   for (const keyword of eceKeywordMap) {
     if (lower.includes(keyword)) return eceTopicMap[keyword];
   }
-  const cleaned = query.replace(/\b(what|is|are|a|an|the|explain|about|define|whats|how|does|do|why|for|in)\b/gi, " ").replace(/\s+/g, " ").trim();
+  let cleaned = query
+    .replace(/^\s*(what|is|are|a|an|the|explain|about|define|whats|how|does|do|why|tell me about|give me|can you|please)\b/gi, "")
+    .replace(/\b(please|thanks|thank you|in simple terms|in detail|briefly|clearly|easily)\b/gi, "")
+    .replace(/[?!.,;:'"]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) cleaned = query.replace(/[?!.,;:'"]+/g, "").trim();
   return cleaned;
 }
 
