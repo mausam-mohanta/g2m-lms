@@ -18,8 +18,8 @@ export function AuthProvider({ children }) {
   const login = (email, password) => {
     const mockUsers = {
       "admin@g2m.com": { id: 1, name: "Admin User", email: "admin@g2m.com", role: "admin", avatar: "/avatars/admin.png", joinDate: "2024-01-15", bio: "Platform administrator" },
-      "instructor@g2m.com": { id: 2, name: "Dr. Sarah Chen", email: "instructor@g2m.com", role: "instructor", avatar: "/avatars/instructor.png", joinDate: "2024-02-20", bio: "Senior AI & Machine Learning Instructor", coursesCount: 8 },
-      "student@g2m.com": { id: 3, name: "Alex Johnson", email: "student@g2m.com", role: "student", avatar: "/avatars/student.png", joinDate: "2024-06-10", bio: "Computer Science student passionate about AI", enrolledCourses: [1, 2, 3, 5] },
+      "instructor@g2m.com": { id: 2, name: "Dr. Sarah Chen", email: "instructor@g2m.com", role: "instructor", avatar: "/avatars/instructor.png", joinDate: "2024-02-20", bio: "Senior AI & Machine Learning Instructor" },
+      "student@g2m.com": { id: 3, name: "Alex Johnson", email: "student@g2m.com", role: "student", avatar: "/avatars/student.png", joinDate: "2024-06-10", bio: "Computer Science student passionate about AI" },
     };
     const found = mockUsers[email];
     if (found && password === "password123") {
@@ -31,7 +31,7 @@ export function AuthProvider({ children }) {
   };
 
   const register = (name, email, password, role = "student") => {
-    const newUser = { id: Date.now(), name, email, role, avatar: "/avatars/default.png", joinDate: new Date().toISOString().split("T")[0], bio: "", enrolledCourses: [], coursesCount: 0 };
+    const newUser = { id: Date.now(), name, email, role, avatar: "/avatars/default.png", joinDate: new Date().toISOString().split("T")[0], bio: "" };
     setUser(newUser);
     localStorage.setItem("lms_user", JSON.stringify(newUser));
     return { success: true };
