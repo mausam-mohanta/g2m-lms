@@ -1,7 +1,30 @@
 import { NextResponse } from "next/server";
+import { generateText } from "ai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 
 const GOOGLE_API_KEY = process.env.GOOGLE_SEARCH_API_KEY || "";
 const GOOGLE_CX = process.env.GOOGLE_SEARCH_CX || "";
+
+const GOOGLE_AI_KEY = process.env.GOOGLE_GENERATIVE_AI_API_KEY || "";
+const google = GOOGLE_AI_KEY ? createGoogleGenerativeAI({ apiKey: GOOGLE_AI_KEY }) : null;
+const GEMINI_MODEL = "gemini-3.7-flash";
+
+const hasGemini = Boolean(google);
+
+async function generateWithGemini(prompt, system) {
+  if (!google) return null;
+  try {
+    const { text } = await generateText({
+      model: google(GEMINI_MODEL),
+      prompt,
+      system: system || "You are an expert Electronics and Communication Engineering (ECE) tutor helping students learn.",
+    });
+    return text;
+  } catch (e) {
+    console.error("Gemini generation failed:", e.message);
+    return null;
+  }
+}
 
 function cleanHTML(text = "") {
   return text
@@ -506,11 +529,17 @@ function buildAnswerFromResults(results, query, mode) {
     displayLink: r.displayLink,
   }));
 
-  if (mode === "concept" || mode === "summarize") {
-    const intro =
-      mode === "summarize"
-        ? `Here's a summary of **${query}** based on the latest sources:\n\n`
-        : `Here's an explanation of **${query}** based on multiple sources:\n\n`;
+  if (mode === "concept") {
+    const first = snippets[0];
+    const brief = truncate(first.snippet.replace(/\s+/g, " ").trim(), 320);
+    return {
+      answer: `**${query}**\n${brief}`,
+      sources,
+    };
+  }
+
+  if (mode === "summarize") {
+    const intro = `Here's a summary of **${query}** based on the latest sources:\n\n`;
     const body = snippets
       .map((s, i) => `${i + 1}. **${s.title}**\n${s.snippet}`)
       .join("\n\n");
@@ -574,27 +603,64 @@ export async function POST(req) {
     const enhancedQuery = normalizeTopic(cleanQuery);
     const hasGoogleAPI = Boolean(GOOGLE_API_KEY && GOOGLE_CX);
 
-    let provider = "duckduckgo";
+    let provider = hasGemini ? "gemini" : "duckduckgo";
 
-    // Try DuckDuckGo first (free, no key)
-    const ddg = await duckDuckGoSearch(enhancedQuery);
-    let results = ddg?.sources || null;
+    // 1) Use Gemini to generate an intelligent answer
+    if (hasGemini && mode !== "quiz") {
+      const modeInstruction = {
+        concept: "Give a brief explanation of the concept in ONLY 2-3 short lines. Use everyday, easy-to-understand language. Do not use headings, bullet points, or markdown formatting beyond plain bold on the topic. No formulas, no long detail.",
+        summarize: "Give a concise but complete summary of the topic. Use a few short paragraphs and bullet points for key points.",
+        code: "Provide working code, pseudocode, or Verilog/VHDL/MATLAB/Python snippets relevant to the topic with brief explanations. Format code in markdown code blocks.",
+        search: "Give a comprehensive but well-organized overview of the topic with key points, sub-topics, and practical relevance to ECE.",
+      }[mode] || "Give a comprehensive, well-organized answer.";
 
-    // If DDG returned nothing useful and Google key exists, use Google
-    if ((!results || results.length === 0) && hasGoogleAPI) {
-      const gResults = await googleSearch(`${enhancedQuery} electronics communication engineering`);
-      if (gResults && gResults.length > 0) {
-        results = gResults;
-        provider = "google";
+      const formatNote =
+        mode === "concept"
+          ? "Answer in plain text, 2-3 lines maximum. No headings, no bullet points, no code blocks."
+          : "Keep the answer informative, accurate, and structured with markdown (headings, bold, bullet points).";
+
+      const aiAnswer = await generateWithGemini(
+        `Topic: ${cleanQuery}\n\n${modeInstruction}\n\n${formatNote}`,
+        mode === "concept"
+          ? "You are an expert ECE tutor. Explain concepts simply and briefly in 2-3 lines only."
+          : "You are an expert Electronics and Communication Engineering (ECE) tutor. Give technically accurate, well-structured answers using markdown formatting."
+      );
+
+      if (aiAnswer) {
+        answer = aiAnswer;
+        provider = "gemini";
       }
     }
 
-    // Build answer from whichever provider returned results
-    if (mode !== "quiz" && results && results.length > 0) {
-      const synthesized = buildAnswerFromResults(results, cleanQuery, mode);
-      if (synthesized) {
-        answer = synthesized.answer;
-        sources.push(...synthesized.sources);
+    // 2) If no Gemini answer, fall back to web search result synthesis
+    if (!answer) {
+      const ddg = await duckDuckGoSearch(enhancedQuery);
+      let results = ddg?.sources || null;
+
+      if ((!results || results.length === 0) && hasGoogleAPI) {
+        const gResults = await googleSearch(`${enhancedQuery} electronics communication engineering`);
+        if (gResults && gResults.length > 0) {
+          results = gResults;
+          provider = "google";
+        }
+      }
+
+      if (results && results.length > 0) {
+        const synthesized = buildAnswerFromResults(results, cleanQuery, mode);
+        if (synthesized) {
+          answer = synthesized.answer;
+          sources.push(...synthesized.sources);
+          if (provider === "gemini") provider = "duckduckgo";
+        }
+      }
+
+      // Fallback to Wikipedia
+      if (!answer) {
+        const wiki = await getWikipediaBest(enhancedQuery);
+        if (wiki) {
+          sources.push({ title: `${wiki.title} - Wikipedia`, url: wiki.url });
+          answer = `**${wiki.title}**\n\n${truncate(wiki.extract, 1400)}`;
+        }
       }
     }
 
@@ -641,38 +707,12 @@ export async function POST(req) {
         googleUrl,
         query: cleanQuery,
         provider,
-        apiConfigured: hasGoogleAPI,
+        apiConfigured: hasGoogleAPI || hasGemini,
       });
     }
 
-    // Fallback to Wikipedia if none of the providers returned usable results
     if (!answer) {
-      const wiki = await getWikipediaBest(enhancedQuery);
-
-      if (mode === "concept" || mode === "summarize") {
-        if (wiki) {
-          answer =
-            (mode === "summarize"
-              ? `Here's a concise summary of **${wiki.title}** in the context of ECE:\n\n`
-              : `**${wiki.title}**\n\n`) +
-            truncate(wiki.extract, 1800);
-          sources.push({ title: `${wiki.title} - Wikipedia`, url: wiki.url });
-        } else {
-          answer = `I couldn't find a detailed article for "${cleanQuery}". Tap "Search on Google" below for the latest results.`;
-        }
-      }
-
-      if (mode === "code" || mode === "search") {
-        if (wiki) {
-          sources.push({ title: `${wiki.title} - Wikipedia`, url: wiki.url });
-          answer =
-            `**${wiki.title}**\n\n` +
-            truncate(wiki.extract, 1400) +
-            `\n\nOpen the sources below, or tap "Search on Google" for full results on "${cleanQuery}".`;
-        } else {
-          answer = `I searched for "${cleanQuery}" but couldn't find strong results. Tap "Search on Google" to look it up directly.`;
-        }
-      }
+      answer = `I couldn't find a detailed answer for "${cleanQuery}". Tap "Search on Google" below for the latest results.`;
     }
 
     // Deduplicate sources
@@ -689,7 +729,7 @@ export async function POST(req) {
       googleUrl,
       query: cleanQuery,
       provider,
-      apiConfigured: hasGoogleAPI,
+      apiConfigured: hasGoogleAPI || hasGemini,
     });
   } catch (err) {
     console.error("Tutor route error:", err);

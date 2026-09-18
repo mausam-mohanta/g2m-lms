@@ -15,9 +15,9 @@ const MODES = [
     key: "concept",
     icon: Brain,
     title: "Explain a Concept",
-    desc: "Get a clear explanation of any ECE topic with real sources.",
+    desc: "Get a quick 2-3 line explanation of any ECE topic.",
     placeholder: "Type your question here...",
-    starter: "I can explain any ECE concept clearly. What would you like me to explain? Type your topic below, or pick a suggestion.",
+    starter: "I can explain any ECE concept in just 2-3 lines. What would you like me to explain? Type your topic below, or pick a suggestion.",
     color: "from-blue-500 to-indigo-500",
   },
   {
@@ -448,7 +448,12 @@ export default function AITutorPage() {
             <activeMode.icon size={24} className="text-primary-500" /> {activeMode.title}
           </h1>
           <p className="text-surface-500 dark:text-surface-400 text-sm mt-1 flex items-center gap-2">
-            {provider === "google" ? (
+            {provider === "gemini" ? (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                Gemini AI tutor online
+              </>
+            ) : provider === "google" ? (
               <>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 Live Google Search connected
