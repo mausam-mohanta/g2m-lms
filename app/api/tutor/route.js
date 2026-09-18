@@ -7,23 +7,31 @@ const GOOGLE_CX = process.env.GOOGLE_SEARCH_CX || "";
 
 const GOOGLE_AI_KEY = process.env.GOOGLE_GENERATIVE_AI_API_KEY || "";
 const google = GOOGLE_AI_KEY ? createGoogleGenerativeAI({ apiKey: GOOGLE_AI_KEY }) : null;
-const GEMINI_MODEL = "gemini-3.7-flash";
+const GEMINI_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-flash-latest"];
 
 const hasGemini = Boolean(google);
 
 async function generateWithGemini(prompt, system) {
   if (!google) return null;
-  try {
-    const { text } = await generateText({
-      model: google(GEMINI_MODEL),
-      prompt,
-      system: system || "You are an expert Electronics and Communication Engineering (ECE) tutor helping students learn.",
-    });
-    return text;
-  } catch (e) {
-    console.error("Gemini generation failed:", e.message);
-    return null;
+  for (const modelName of GEMINI_MODELS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    try {
+      const { text } = await generateText({
+        model: google(modelName),
+        prompt,
+        system: system || "You are an expert Electronics and Communication Engineering (ECE) tutor helping students learn.",
+        abortSignal: controller.signal,
+        maxRetries: 1,
+      });
+      if (text && text.trim()) return text;
+    } catch (e) {
+      console.error(`Gemini (${modelName}) failed:`, e.message);
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  return null;
 }
 
 function cleanHTML(text = "") {
